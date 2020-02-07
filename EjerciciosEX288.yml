@@ -1,0 +1,532 @@
+====================================================================================================================================
+
+
+01 
+
+Source2Image OpenShift 
+
+oc new-project s2i-project
+
+oc new-app --name greet --build-env npm_config_registry=http://nexus3-nexus.apps-crc.testing/repository/npm-openshift nodejs:10~https://github.com/calvarado2004/DO288-apps#source-build --context-dir nodejs-helloworld
+
+oc logs -f bc/greet
+
+cd nodejs-helloworld/
+
+python -m json.tool nodejs-helloworld/package.json 
+
+vi nodejs-helloworld/package.json 
+
+python -m json.tool nodejs-helloworld/package.json 
+
+git commit -a -m "Fixed missing JSON colon on nodejs-helloword/package.json"
+
+git push
+oc get all
+oc start-build --follow bc/greet
+oc status --suggest
+oc get pods
+oc logs greet-1-tvjzj
+oc expose svc/greet
+
+
+====================================================================================================================================
+
+
+02 
+
+
+Dockerfile for OpenShift
+
+
+oc project s2i-project
+
+oc new-app --name hola https://github.com/calvarado2004/DO288-apps#container-build --context-dir container-build
+
+oc logs -f bc/hola
+oc get pods
+vi Dockerfile
+git commit -a -m "Dockerfile modified in order to match OpenShift requisites"
+git push
+oc delete all -l app=hola
+
+oc new-app --name hola https://github.com/calvarado2004/DO288-apps#container-build --context-dir container-build
+
+oc logs -f bc/hola
+oc get pods
+oc get all
+oc expose svc/hola
+cat Dockerfile
+
+# Use the httpd-parent image as base
+FROM quay.io/redhattraining/httpd-parent
+
+EXPOSE 8080
+
+LABEL io.k8s.description="A basic Apache HTTP Server child image, uses ONBUILD" \
+io.k8s.display-name="Apache HTTP Server" \
+io.openshift.expose-services="8080:http" \
+io.openshift.tags="apache, httpd"
+
+RUN sed -i "s/Listen 80/Listen 8080/g" /etc/httpd/conf/httpd.conf
+
+RUN chgrp -R 0 /var/log/httpd /var/run/httpd && \chmod -R g=u /var/log/httpd /var/run/httpd
+
+USER 1001
+
+
+====================================================================================================================================
+
+
+03
+
+ConfigMaps and secrets
+
+cd DO288-apps/
+
+git checkout master
+git checkout -b app-config
+git push origin app-config
+git push -u origin app-config
+
+oc project
+oc get all
+
+oc new-app --name myapp --build-env npm_config_registry=http://nexus3-nexus.apps-crc.testing/repository/npm-openshift nodejs:10~https://github.com/calvarado2004/DO288-apps#app-config --context-dir app-config
+
+oc logs -f bc/myapp
+oc get pods
+oc expose svc myapp
+oc get routes
+
+curl myapp-s2i-project.apps-crc.testing
+
+oc create configmap myappconf --from-literal APP_MSG="Test Message stored in a config map"
+
+oc describe cm/myappconf
+
+oc set env dc/myapp --from cm/myappconf
+
+
+cd app-config/
+ls
+
+cat myapp.sec
+
+oc create secret generic myappfilesec --from-file myapp.sec
+
+oc get secret/myappfilesec -o yaml
+
+oc get secret/myappfilesec -o json
+
+oc set volume dc/myapp --add -t secret -m /opt/app-root/secure --name myappsec-vol --secret-name myappfilesec
+config
+oc status
+oc get pods
+
+oc edit dc/myappconfig
+
+oc get configmaps
+
+oc edit cm/myappconf
+
+oc rollout latest dc/myapp
+
+oc get pods
+
+
+====================================================================================================================================
+
+04 
+
+
+Dockerfile y config map
+
+
+
+oc login -u kubeadmin -p cznQP-n4pBk-cnXTg-nkevH https://api.crc.testing:6443
+crc console
+oc new-project design-container
+oc new-app --name elvis https://github.com/calvarado2004/DO288-apps#design-container --context-dir hello-java
+oc logs -f bc/elvis
+oc status
+oc logs pod/elvis-1-ff8x8
+vi hello-java/Dockerfile
+-----------------------------------------------------------------------------------------------------
+FROM   registry.access.redhat.com/ubi8/ubi:8.0
+
+MAINTAINER   Red Hat Training <training@redhat.com>
+
+# command line options to pass to the JVM
+ENV       JAVA_OPTIONS -Xmx512m
+
+
+# Install the Java runtime, create a user for running the app, and set permissions
+RUN   yum install -y --disableplugin=subscription-manager java-1.8.0-openjdk-headless && \
+      yum clean all --disableplugin=subscription-manager -y && \
+      mkdir -p /opt/app-root/bin
+
+# Copy the runnable fat JAR to the container.
+ADD   https://github.com/RedHatTraining/DO288-apps/releases/download/OCP-4.1-1/hello-java.jar /opt/app-root/bin/
+
+COPY  run-app.sh /opt/app-root/bin/
+
+WORKDIR /opt/app-root
+
+# Copy the package.json to APP_ROOT
+ONBUILD COPY package.json /opt/app-root
+
+# Install the dependencies
+ONBUILD RUN npm install
+
+# Copy the app source code to APP_ROOT
+ONBUILD COPY src /opt/app-root
+
+RUN   chown -R 0 /opt/app-root && \
+      chmod -R g=u /opt/app-root
+
+EXPOSE 8080
+
+USER  1001
+
+# Run the fat JAR
+CMD   /opt/app-root/bin/run-app.sh
+
+# OR
+
+# Start node server on port 8080
+CMD [ "npm", "start" ]
+
+
+
+
+----------------------------------------------------------------------------------------------
+
+git commit -a -m "Fixed Dockerfile following OCP Best Practices"
+git config --global user.name "calvarado2004"
+git config --global user.email "calvarad@redhat.com"
+git push
+
+oc start-build elvis
+oc logs -f bc/elvis
+oc statusWORKDIR /opt/app-root
+# Copy the package.json to APP_ROOT
+ONBUILD COPY package.json /opt/app-root
+# Install the dependencies
+ONBUILD RUN npm install
+# Copy the app source code to APP_ROOT
+ONBUILD COPY src /opt/app-root
+
+oc get pods
+oc logs elvis-2-sqpzd
+oc get all
+oc expose svc/elvis
+oc get route
+curl elvis-design-container.apps-crc.testing
+curl elvis-design-container.apps-crc.testing/api/hello
+oc create cm appconfig --from-literal APP_MSG="Elvis lives!"
+oc describe cm/appconfig
+oc set env dc/elvis --from cm/appconfig
+oc status
+oc logs -f bc/elvis
+oc status
+oc get pods
+curl elvis-design-container.apps-crc.testing/api/hello
+
+
+
+====================================================================================================================================
+
+05
+
+oc patch config cluster -n openshift-image-registry --type merge -p '{"spec":{"defaultRoute":true}}'
+
+
+
+skopeo inspect docker://quay.io/redhattraining/hello-world-nginx
+oc import-image hello-world --confirm --from quay.io/redhattraining/hello-world-nginx
+oc get istag
+oc describe is hello-world
+oc new-project image-stream
+oc get is
+oc get is -n openshift
+oc get istag
+oc import-image hello-world --confirm --from quay.io/redhattraining/hello-world-nginx
+oc get istag
+oc project
+oc new-app --name hello -i image-stream/hello-world
+oc status
+oc get pods
+oc expose svc hello
+oc get route
+curl hello-image-stream.apps-crc.testing
+
+
+
+
+
+
+====================================================================================================================================
+
+06
+
+
+
+source /usr/local/etc/ocp4.config
+
+podman login -u ${RHT_OCP4_QUAY_USER} quay.io
+
+skopeo copy oci:/home/student/DO288/labs/external-registry/ubi-sleep docker://quay.io/${RHT_OCP4_QUAY_USER}/ubi-sleep:1.0
+
+podman search quay.io/ubi-sleep
+
+skopeo inspect docker://quay.io/${RHT_OCP4_QUAY_USER}/ubi-sleep:1.0
+
+
+sudo podman login -u ${RHT_OCP4_QUAY_USER} quay.io
+
+sudo podman run -d --name sleep quay.io/${RHT_OCP4_QUAY_USER}/ubi-sleep:1.0
+
+sudo podman ps
+
+sudo podman logs sleep
+
+sudo podman stop sleep
+
+sudo podman rm sleep
+
+oc login -u calvarad-redhat-com -p f6419c7a14cd4d54ad68 https://api.ocp-na2.prod.nextcle.com:6443
+
+oc new-app --name sleep --docker-image quay.io/${RHT_OCP4_QUAY_USER}/ubi-sleep:1.0
+
+error: unable to locate any local docker images with name "quay.io/yourquayuser/
+ubi-sleep:1.0"
+
+
+oc create secret generic quayio --from-file .dockerconfigjson=${XDG_RUNTIME_DIR}/containers/auth.json --type kubernetes.io/dockerconfigjson
+
+oc secrets link default quayio --for pull
+
+oc new-app --name sleep --docker-image quay.io/${RHT_OCP4_QUAY_USER}/ubi-sleep:1.0
+
+
+====================================================================================================================================
+
+
+07
+
+
+oc patch config cluster -n openshift-image-registry --type merge -p '{"spec":{"defaultRoute":true}}'
+
+oc get route -n openshift-image-registry
+
+TOKEN=$(oc whoami -t)
+
+podman login -u myuser -p ${TOKEN}  default-route-openshift-image-registry.domain.example.com
+
+oc policy add-role-to-user system:image-puller  user_name -n project_name
+
+
+INTERNAL_REGISTRY=$( oc get route default-route  -n openshift-image-registry -o jsonpath='{.spec.host}' )
+
+skopeo copy --dest-creds=${RHT_OCP4_DEV_USER}:${TOKEN}  oci:/home/student/DO288/labs/expose-registry/ubi-info  docker://${INTERNAL_REGISTRY}/${RHT_OCP4_DEV_USER}-common/ubi-info:1.0
+
+
+====================================================================================================================================
+
+08
+
+Docker build from tar.gz
+
+skopeo copy docker-archive:php-70-rhel7-original.tar.gz docker://quay.io/${RHT_OCP4_QUAY_USER}/php-70-rhel7:latest
+
+skopeo copy docker-archive:php-70-rhel7-original.tar.gz docker://quay.io/${RHT_OCP4_QUAY_USER}/php-70-rhel7:1.0
+
+
+oc create secret generic quay-registry --from-file .dockerconfigjson=${XDG_RUNTIME_DIR}/containers/auth.json --type kubernetes.io/dockerconfigjson
+
+ oc secrets link builder quay-registry
+
+oc import-image php --from quay.io/${RHT_OCP4_QUAY_USER}/php-70-rhel7 --confirm
+
+oc new-app --name trigger  http://github.com/${RHT_OCP4_GITHUB_USER}/DO288-apps -i php --context-dir trigger-builds
+
+oc describe bc/trigger | grep Triggered
+
+
+
+skopeo copy docker-archive:php-70-rhel7-newer.tar.gz  docker://quay.io/${RHT_OCP4_QUAY_USER}/php-70-rhel7:latest
+
+skopeo copy docker-archive:php-70-rhel7-newer.tar.gz  docker://quay.io/${RHT_OCP4_QUAY_USER}/php-70-rhel7:1.1
+
+skopeo copy  docker://quay.io/${RHT_OCP4_QUAY_USER}/php-70-rhel7:1.1  docker://quay.io/${RHT_OCP4_QUAY_USER}/php-70-rhel7:latest
+
+
+oc import-image php
+
+oc describe build trigger-2 | grep cause
+
+
+
+====================================================================================================================================
+
+09
+
+
+oc new-app --name hook http://github.com/${RHT_OCP4_GITHUB_USER}/DO288-apps --image-stream php:7.0 --context-dir post-commit
+
+oc new-app --name hook php:7.0~http://github.com/${RHT_OCP4_GITHUB_USER}/DO288-apps --context-dir post-commit
+
+
+oc start-build bc/hook -F
+
+ oc set env bc/hook DEVELOPER="Carlos Alvarado"
+
+oc set env bc/hook --list
+
+
+oc get route/builds-for-managers -o jsonpath='{.spec.host}{"\n"}'
+
+====================================================================================================================================
+
+10
+
+s2i build test/test-app/ \
+s2i-do288-httpd s2i-sample-app \
+--as-dockerfile ./s2i-sample-app/Dockerfile
+
+
+sudo podman build --format docker -t s2i-sample-app .
+
+ 
+sudo podman run --name test -u 1234 -p 8080:8080 -d s2i-sample-app
+
+  
+sudo podman login -u calvarado2004 quay.io
+
+   
+   
+sudo skopeo copy containers-storage:localhost/s2i-do288-httpd docker://quay.io/calvarado04/s2i-do288-httpd
+
+
+
+====================================================================================================================================
+
+11
+oc login -u ${RHT_OCP4_DEV_USER} -p ${RHT_OCP4_DEV_PASSWORD} ${RHT_OCP4_MASTER_API}
+
+
+====================================================================================================================================
+
+12
+
+oc patch dc/mysql --patch  '{"spec":{"strategy":{"type":"Recreate"}}}'
+
+
+oc patch dc/mysql --type=json  -p='[{"op":"remove", "path": "/spec/strategy/rollingParams"}]'
+
+
+
+oc set env dc/mysql HOOK_RETRIES=5
+
+
+====================================================================================================================================
+
+sudo podman build -t todo-frontend .
+
+sudo skopeo copy containers-storage:localhost/todo-frontend docker://quay.io/calvarado2004/todo-frontend
+
+skopeo copy docker-archive:php-70-rhel7-newer.tar.gz  docker://quay.io/${RHT_OCP4_QUAY_USER}/php-70-rhel7:latest
+
+skopeo copy oci:/home/student/DO288/labs/external-registry/ubi-sleep docker://quay.io/${RHT_OCP4_QUAY_USER}/ubi-sleep:1.0
+
+podman login -u calvarado04 quay.io
+
+echo $XDG_RUNTIME_DIR
+
+oc create secret generic quayio --from-file .dockerconfigjson=/run/user/1000/containers/auth.json --type=kubernetes.io/dockerconfigjson
+
+oc policy add-role-to-group system:image-puller system:serviceaccounts:review-dockerfile -n review-common
+
+oc new-app --name frontend  -e BACKEND_HOST=api.example.com  -i review-common/todo-frontend
+
+oc new-app --name tododb --docker-image registry.access.redhat.com/rhscl/mysql-57-rhel7 -e MYSQL_USER=todoapp -e MYSQL_PASSWORD=mypass -e MYSQL_DATABASE=todo
+
+oc set triggers dc/tododb --from-config --remove
+
+oc create secret generic tododb --from-literal user=todoapp --from-literal password=mypass
+
+oc set env dc/tododb  --prefix MYSQL_  --from secret/tododb
+
+oc set env dc/tododb --list
+
+oc rollout latest dc/tododb
+
+
+
+git checkout -b review-service
+
+git push -u origin review-service
+
+mkdir -p ~/DO288-apps/todo-backend/.s2i/bin
+
+cp ~/DO288/labs/review-service/lifecycle.sh ~/DO288-apps/todo-backend/.s2i/bin/assemble
+
+oc describe istag nodejs:8 -n openshift | grep io.openshift.s2i.scripts-url
+
+[carlos@hpworkstation todo-backend]$ oc describe istag nodejs:8 -n openshift | grep io.openshift.s2i.scripts-url
+                io.openshift.s2i.scripts-url=image:///usr/libexec/s2i
+
+                
+4.5. Edite el script ~/DO288-apps/todo-backend/.s2i/bin/assemble para invocar el script S2I de ensamblaje estándar de la imagen de compilador S2I Node.js.
+
+#!/bin/bash
+echo "Peforming the S2I build..."
+#TODO: add call to the standard S2I assemble script
+/usr/libexec/s2i/assemble
+rc=$?
+if [ $rc -eq 0 ]; then
+echo "Recording successful build on the life cycle management system..."
+else
+echo "Not calling the life cycle management system: S2I build failed!"
+fi
+exit $rc
+
+
+oc new-app --name backend \
+--build-env npm_config_registry=\
+http://nexus-nexus.apps-crc.testing/nexus/content/repositories/nodejs/ \
+-e DATABASE_NAME=todo \
+-e DATABASE_USER=todoapp \
+-e DATABASE_PASSWORD=mypass \
+-e DATABASE_SVC=tododb \
+--context-dir todo-backend \
+nodejs:8~https://github.com/calvarado2004/DO288-apps#review-service
+
+oc logs -f bc/backend
+
+oc set triggers dc/backend --from-config --remove
+
+oc set env dc/backend --prefix DATABASE_ --from secret/tododb
+
+oc set env dc/backend --list
+
+oc create cm todoapp --from-literal init=true
+
+oc set env dc/backend --prefix=DATABASE_  --from=cm/todoapp
+
+[carlos@hpworkstation todo-backend]$ oc set env dc/backend --prefix=DATABASE_  --from=cm/todoapp
+deploymentconfig.apps.openshift.io/backend updated
+[carlos@hpworkstation todo-backend]$ oc set env dc/backend --list
+# deploymentconfigs/backend, container backend
+DATABASE_NAME=todo
+# DATABASE_PASSWORD from secret tododb, key password
+DATABASE_SVC=tododb
+# DATABASE_USER from secret tododb, key user
+# DATABASE_INIT from configmap todoapp, key init
+
+
+oc rollout latest dc/backend
+
+oc start-build backend
+
